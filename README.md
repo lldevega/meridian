@@ -1,8 +1,7 @@
-# The meridian CFD solver
-## A 2D, unstructured, finite volume solver of the Euler flow equations
-Meridian is a 2D finite volume CFD solver of the Euler equations,
-intended to solve low-to-medium complexity problems with a basic
-accuracy level.
+# Meridian CFD solver.
+Meridian is a personal project aimed at developing a 2D unstructured
+finite volume CFD solver of the Euler equations for solveing 
+low-to-medium complexity problems with a basic accuracy level.
 
 This code features a series of classes providing:
 * Unstructured mesh representation, generated from SU2 format
@@ -15,12 +14,17 @@ state, stagnation inflow and backpressure outflow.
 * Input / Output functionalities, allowing to dump the mesh
 and the convergence history in tecplot format.
 
-Usage:
-* Compile the Main.cpp script filled-in with the use case 
-settings (tested with C++ 11 / GCC 4.8.5).
+How to launch a simulation:
+* Compile the Main.cpp script (tested with C++ 11 / GCC 4.8.5).
+* Get your CFD mesh into SU2 format. Only quad and tri elements
+are currently supported.
+* Fill-in the configuration file with your settings.
 * Launch the executable.
 
 Upcoming improvements:
-* Use case definition from input file.
-* Second-order accurate spatial discretization.
+* Code architecture refactoring (source & header separation).
+* Doxygen-compatible comments.
+* Cmake-based compilation.
+* Mesh metric pre-computation and storage.
+* Gradient computation for second order accuracy schemes.
 * Multi-stage time-integration schemes.

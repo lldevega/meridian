@@ -106,8 +106,7 @@ protected:
 	const ConvectionScheme &_convectionScheme;
 
 	template <class BoundaryConditionType>
-	void BoundaryConditionLoop(BoundaryConditionType bc_, const State &solution,
-	    State &residual)
+	void BoundaryConditionLoop(BoundaryConditionType bc_, const State &solution, State &residual)
 	{
 		// dereference bc
 		auto &bc = *bc_;

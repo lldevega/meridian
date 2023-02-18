@@ -123,12 +123,7 @@ public:
 	 */
 	TimeIntegrationSchemeBase(const CellContainer &cellContainer, const TimeStepController &timeStepController):
 		_cellContainer(cellContainer), _timeStepController(timeStepController), _convergenceMonitor (ConvergenceMonitor())
-	{
-		// print header
-		std::cout << "Time integration" << std::endl;
-		std::cout << "It" << " ro " << " rou " << " rov " << " roE " << std::endl;
-		std::cout << "---------------------" << std::endl;
-	}
+	{ }
 
 	/// Purely virtual method to update the solution based on the compute residual.
 	virtual void Update(int iteration, const State &residual, State &solution) = 0;
@@ -139,6 +134,13 @@ public:
 		return this->_convergenceMonitor;
 	}
 
+	void PrintHeader()
+	{
+		// print header
+		std::cout<< std::endl;
+		std::cout<< "It   " << "ro           " << "rou          " << "rov          " << "roE " << std::endl;
+		std::cout<< "-------------------------------------------------------" << std::endl;
+	}
 
 	/// Write the convergence monitor.
 	/*
@@ -191,7 +193,7 @@ protected:
 			/ this->_convergenceMonitor[0].GetStagnationEnergy();
 
 		// print to screen
-		std::cout << iteration << "  ";
+		std::cout << iteration << "    ";
 		std::cout << std::setprecision(5) << std::scientific;
 		std::cout << roResidualNormReduction << "  " << rouResidualNormReduction
 			<< "  " << rovResidualNormReduction << "  " << roEResidualNormReduction << std::endl;

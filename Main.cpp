@@ -24,33 +24,31 @@
 #include <iostream>
 #include "src/Meridian.cpp"
 
-int main()
+int main(int argc, char *argv[])
 {
+	// check that the right number of command line args has been passed
+	if (argc < 2)
+		throw std::invalid_argument("Please include a configuration file to the call of meridian!");
+
 	// print logo for fun
 	PrintLogo();
 
+	// create an object that reads configuration file and has access to its information
+	ConfigFileReader params = CreateConfigFileReader(argv[1]);
+
 	// create the computational mesh
-	//Mesh mesh = CreateMesh("examples/pipe/pipe.su2");
-	Mesh mesh = CreateMesh("examples/cylinder/cylinder.su2");
-	//Mesh mesh = CreateMesh("examples/naca0012/naca0012.su2");
+	Mesh mesh = CreateMesh(params.GetMeshFilename());
 
 	// instantiate the gas model
-	GasThermodynamicProperties gas = CreateGasModel(287.06, 1.4);
+	GasThermodynamicProperties gas = CreateGasModel(params.GetGasConstant(), params.GetGasSpecificHeatRatio());
 
 	// create the initial state
 	State solution = CreateInitialState(mesh, gas,
-	    {{"Mach", 0.2}, {"Pressure", 101325.0}, {"Temperature", 288.15}, {"AoA", 0.0}});
+	    {{"Mach", params.GetFreeStreamMach()}, {"Pressure", params.GetFreeStreamPressure()},
+	        {"Temperature", params.GetFreeStreamTemperature()}, {"AoA", params.GetFreeStreamAoA()}});
 
 	// create the boundary container
-//	BoundaryConditionContainer::BoundaryConditionMap bcMap{
-//	   {"BCWallInviscid", {"upper", "lower"}, {} },
-//	   {"BCStagnationInflow", {"inlet"}, {{"StagnationPressure", 101325.0 * 1.02828}, {"StagnationTemperature", 288.15*1.008}, {"AoA", 0.0}}},
-//	   {"BCOutflowPressure", {"outlet"}, {{"Pressure", 101325.0}}}
-//	};
-	BoundaryConditionContainer::BoundaryConditionMap bcMap{
-	   {"BCWallInviscid", {"cylinder"}, {} },
-	   {"BCExteriorState", {"farfield"}, {{"Mach", 0.2}, {"Pressure", 101325.0}, {"Temperature", 288.15}, {"AoA", 0.0}} },
-	};
+	BoundaryConditionContainer::BoundaryConditionMap bcMap(params.GetBCMap());
 
     // create the boundary condition container
 	BoundaryConditionContainer bcContainer = CreateBoundaryConditionContainer(mesh, bcMap);
@@ -65,15 +63,18 @@ int main()
 
 	// create the time step controller.
 	TimeStepController timeStepController = CreateTimeStepController(
-		mesh, {{"CFL", 0.4}, {"Activate local time step", 1.}}
-	);
+		mesh, {{"CFL", params.GetCFLNumber()}}, params.GetTimeStep());
 
 	// create the time integration
 	BackwardEuler timeIntegration = CreateTimeIntegration(mesh, timeStepController);
 
 	// run the CFD loop
 	RunCFD(residualComputation, timeIntegration, solution, residual, mesh,
-		{{"Number of iterations", 5000}});
+		{{"Number of iterations", params.GetNbIterations()}});
+
+	// successfull run
+	std::cout << std::endl;
+	std::cout << "End of meridian" << std::endl;
 
 	return 0;
 }

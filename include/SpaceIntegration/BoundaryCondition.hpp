@@ -375,9 +375,18 @@ public:
 	using StringVector = typename std::vector<std::string>;
 	using ValueDict = typename std::map<std::string, double>;
 
+	/// Constructor from values.
 	BoundaryTreatmentMap(const std::string treatmentType, const StringVector markerTags,
 	    const ValueDict valueDict): _treatmentType(treatmentType), _markerTags(markerTags),
 	    _valueDict(valueDict) { }
+
+	/// Copy constructor.
+	BoundaryTreatmentMap(const BoundaryTreatmentMap &other)
+	{
+		this->_treatmentType = other.GetTreatmentType();
+		this->_markerTags = other.GetMarkerTags();
+		this->_valueDict = other.GetValueDict();
+	}
 
 	const std::string GetTreatmentType() const
 	{
@@ -396,9 +405,9 @@ public:
 
 protected:
     /// Members (get copied).
-	const std::string _treatmentType;
-	const StringVector _markerTags;
-	const ValueDict _valueDict;
+	std::string _treatmentType;
+	StringVector _markerTags;
+	ValueDict _valueDict;
 };
 
 ///// Boundary condition container class.
@@ -410,7 +419,6 @@ class BoundaryConditionContainer: public std::vector<std::shared_ptr<BoundaryCon
 public:
 	/// Define BC map type.
 	/// Example of use: `BCMapping bcMapping {"BCWallInviscid", {"upper side", "lower side"}};`.
-	//using BoundaryConditionMap = typename std::map<std::string, std::vector<std::string>>;
 	using BoundaryConditionMap = typename std::vector<BoundaryTreatmentMap>;
 	using StringVector = typename BoundaryTreatmentMap::StringVector;
 	using ValueDict = typename BoundaryTreatmentMap::ValueDict;
@@ -454,6 +462,7 @@ public:
 			const ValueDict &valueDict = this->_bcMapping[j].GetValueDict();
 
 			// initialize the message displaying information
+			std::cout << std::endl;
 			std::cout << "Boundary condition treatment " << requestedBCTreatment << " will be applied"
 				" on boundary faces:";
 

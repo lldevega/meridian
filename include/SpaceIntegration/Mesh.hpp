@@ -76,8 +76,8 @@ protected:
 
 /// Cell class.
 /*
-* A cell is a quadrilateral in the 2D (x, y) space
-* It is defined by 4 nodes, has 4 faces and a cell center
+* A cell is a either a quad or a triangle in the 2D (x, y) space
+* It is defined by either 3 or 4 nodes, has 3 or 4 faces and a cell center
 * which is a node itself.
 */
 class Cell
@@ -85,21 +85,21 @@ class Cell
 public:
   /// Constructor.
   /*
-  * Requires 4 nodes
+  * Requires a vector of nodes
   */
-  Cell(const Node &node0, const Node &node1, const Node &node2, const Node &node3, int elemID):
-      _nodes({node0, node1, node2, node3}), _center(ComputeCenter(elemID)), _surface(ComputeSurface(elemID))
+  Cell(const std::vector<Node> nodes, int elemID): _nodes(nodes), _center(ComputeCenter(elemID)),
+      _surface(ComputeSurface())
   { }
 
-  /// Computes the centroid of 4 nodes and stores it as a node.
+  /// Computes the centroid of the nodes and stores it as a node.
   const Node ComputeCenter(int elemID)
   {
       double x = 0;
       double y = 0;
       for (int i = 0; i < _nodes.size(); ++i)
       {
-          x += 0.25 * _nodes[i].GetXCoord();
-          y += 0.25 * _nodes[i].GetYCoord();
+          x += _nodes[i].GetXCoord() / _nodes.size();
+          y += _nodes[i].GetYCoord() / _nodes.size();
       }
 
       Node center(x, y, elemID);
@@ -107,26 +107,24 @@ public:
       return center;
   }
 
-  /// Compute cell surface.
-  double ComputeSurface(int elemID)
+  /// Compute the cell surface using the Shoelace formula.
+  double ComputeSurface()
   {
-    double v1x = _nodes[1].GetXCoord() - _nodes[0].GetXCoord();
-    double v1y = _nodes[1].GetYCoord() - _nodes[0].GetYCoord();
+	   int nNodes = _nodes.size();
+	   double surf = 0.0;
 
-    double v2x = _nodes[2].GetXCoord() - _nodes[0].GetXCoord();
-    double v2y = _nodes[2].GetYCoord() - _nodes[0].GetYCoord();
+	   for (int i = 0; i < nNodes; ++i)
+	   {
+		   int j = (i + 1) % nNodes;
+		   surf += _nodes[i].GetXCoord() * _nodes[j].GetYCoord();
+		   surf -= _nodes[j].GetXCoord() * _nodes[i].GetYCoord();
+	   }
 
-    double v3x = _nodes[3].GetXCoord() - _nodes[0].GetXCoord();
-    double v3y = _nodes[3].GetYCoord() - _nodes[0].GetYCoord();
+	   surf *= 0.5;
 
-    double S1 = 0.5 * (v1x * v2y - v2x * v1y);
-    double S2 = 0.5 * (v2x * v3y - v3x * v2y);
+	   assert (surf >= 0 && "Element has negative surface!"); /// TODO: give ID
 
-    double surf = S1 + S2;
-
-    assert (S1 >= 0.0 && S2 >= 0.0 && "Element has negative surface!"); /// TODO: give ID
-
-    return surf;
+	   return surf;
   }
 
   /// Get center.
@@ -251,14 +249,19 @@ protected:
 
 /// Element class.
 /*
-* An element is a collection of 4 node IDs that make up a cell
+* An element is a collection of N node IDs that make up a cell.
 */
 class Element
 {
 public:
     /// Constructor.
-    Element(std::vector<int> data): _elemID(data[0]),
-        _nodeIDs({data[1], data[2], data[3], data[4]}) {}
+    Element(std::vector<int> data): _elemType(*data.begin()), _elemID(*data.end()), _nodeIDs(CopyNodeIDs(data)) {}
+
+    /// Get element ID.
+    int GetElementType()
+    {
+        return this->_elemType;
+    }
 
     /// Get element ID.
     int GetElementID()
@@ -275,17 +278,39 @@ public:
     /// Reorder nodes to ensure positive cell surface.
     void ReorderNodes(const std::vector<int> &newOrder)
     {
+    	// check that the new order vector contains as needed
+    	assert(this->_nodeIDs.size() == newOrder.size() &&
+    		"The new ordering of the element nodes does not contain enough entries");
+
+    	// make a copy of the node IDs with previous ordering
     	std::vector<int> oldNodeIDs = this->_nodeIDs;
-    	this->_nodeIDs[0] = oldNodeIDs[newOrder[0]];
-    	this->_nodeIDs[1] = oldNodeIDs[newOrder[1]];
-    	this->_nodeIDs[2] = oldNodeIDs[newOrder[2]];
-    	this->_nodeIDs[3] = oldNodeIDs[newOrder[3]];
+
+    	// reorder
+    	for (std::size_t i = 0; i < this->_nodeIDs.size(); ++ i)
+    		this->_nodeIDs[i] = oldNodeIDs[newOrder[i]];
     }
 
 protected:
     /// Members
+    int _elemType;
     int _elemID;
     std::vector<int> _nodeIDs;
+
+    /// Init the node ID vector by copying them from the input data vector.
+    /*
+     * Requires the data (node IDs, element ID and element type in a vector of ints)
+     */
+    std::vector<int> CopyNodeIDs(std::vector<int> &data)
+    {
+    	// we remove 2 entries in the size (one for the elementID, another one for the element type)
+    	std::vector<int> result(data.size() - 2);
+    	// copy node IDs
+    	for (int i = 1; i < data.size() - 1; ++i)
+    		result[i-1] = data[i];
+    	// return
+    	return result;
+
+    }
 };
 
 /// Element and face stencil class.
@@ -381,9 +406,10 @@ protected:
 class Mesh
 {
 public:
-    // define types
+    /// Define types.
     using CellContainer = typename std::vector<Cell>;
     using FaceContainer = typename std::vector<Face>;
+    using NodeContainer = typename std::vector<Node>;
 
     /// Constructor
     /*
@@ -416,7 +442,7 @@ public:
 
         // initialize the element stencil
         Stencil elementStencil(nbElements);
-        // initialize the face stencil
+        // initialize the face stencil. TODO: fix this
         Stencil internalFaceStencil(10 * nbElements);
 
         // loop over all elements
@@ -425,24 +451,33 @@ public:
             // retrieve the list of node IDs of the current element
             const auto &nodeIDs = this->_elements[i].GetNodeIDs();
 
-            // get the nodes
-            const Node &node0 = this->_nodes[nodeIDs[0]];
-            const Node &node1 = this->_nodes[nodeIDs[1]];
-            const Node &node2 = this->_nodes[nodeIDs[2]];
-            const Node &node3 = this->_nodes[nodeIDs[3]];
+            // create a temporal array of unordered nodes
+            std::vector<Node> tmpCellNodes;
 
             // put them in an array
-            std::vector<Node> tmpCellNodes{node0, node1, node2, node3};
+            for (int iNode = 0; iNode < nodeIDs.size(); ++iNode)
+            {
+            	auto nodeID = nodeIDs[iNode];
+            	tmpCellNodes.push_back(this->_nodes[nodeID]);
+            }
 
             // get the order the indices in an anticlock-wise manner to get right oriented cells
-            const auto &orderedIndices = OtherNodesAntiClockWise(node0, node1, node2, node3);
+            const auto &orderedIndices = OtherNodesAntiClockWise(tmpCellNodes);
 
             // reorder the nodes in the element object
             this->_elements[i].ReorderNodes(orderedIndices);
 
+            // create an array of ordered nodes
+            std::vector<Node> orderedCellNodes;
+            orderedCellNodes.reserve(tmpCellNodes.size());
+            for (int iNode = 0; iNode < tmpCellNodes.size(); ++iNode)
+            {
+            	auto cellNode = tmpCellNodes[orderedIndices[iNode]];
+            	orderedCellNodes.push_back(cellNode);
+            }
+
             // compute the associated cell
-            Cell cell(tmpCellNodes[orderedIndices[0]], tmpCellNodes[orderedIndices[1]],
-                tmpCellNodes[orderedIndices[2]], tmpCellNodes[orderedIndices[3]], i);
+            Cell cell(orderedCellNodes, i /*element index*/);
 
             // and push it back to the container
             cellContainer.push_back(cell);
@@ -642,7 +677,7 @@ public:
         return *this->_boundaryFaceStencil;
     }
 
-    void DisplayInfo()
+    void DisplayInfo(const bool detailed = false)
     {
     	// get access to the containers
     	auto &cellCntr = GetCellContainer();
@@ -653,61 +688,64 @@ public:
     	auto &innerFaceStencil = GetInternalFaceStencil().GetStencil();
     	auto &bcFaceStencil = GetBoundaryFaceStencil().GetStencil();
 
-        std::cout << "+---------------------------------------+" << std::endl;
-        std::cout << "+            Mesh global info           +" << std::endl;
-        std::cout << "Nb cells: " << cellCntr.size() << std::endl;
-        std::cout << "Nb nodes: " << nodeCntr.size() << std::endl;
-        std::cout << "Nb internal faces: " << internalFaceCntr.size() << std::endl;
-        std::cout << "Nb boundary faces: " << bcFaceCntr.size() << std::endl;
-        std::cout << "+---------------------------------------+" << std::endl;
+    	std::cout << std::endl;
+        std::cout << "Mesh global info" << std::endl;
+        std::cout << "    Nb cells: " << cellCntr.size() << std::endl;
+        std::cout << "    Nb nodes: " << nodeCntr.size() << std::endl;
+        std::cout << "    Nb internal faces: " << internalFaceCntr.size() << std::endl;
+        std::cout << "    Nb boundary faces: " << bcFaceCntr.size() << std::endl;
+        std::cout << std::endl;
 
-        // display cell info
-        for (int i = 0; i < GetCellContainer().size(); i++)
+        if (detailed)
         {
-            std::cout << "Cell ID: " << cellCntr[i].GetCenter().GetNodeID() << std::endl;
-            std::cout << "  Surface = " << cellCntr[i].GetSurface() << std::endl;
-            std::cout << "  Center = (" << cellCntr[i].GetCenter().GetXCoord() << ", "
-              <<  cellCntr[i].GetCenter().GetYCoord() << ")" << std::endl;
-            std::cout << "  Stencil = ";
-            for (int j = 0; j < elemStencil[i].size(); ++ j)
+            // display cell info
+            for (int i = 0; i < GetCellContainer().size(); i++)
             {
-                std::cout << elemStencil[i][j] << " ";
+                std::cout << "Cell ID: " << cellCntr[i].GetCenter().GetNodeID() << std::endl;
+                std::cout << "  Surface = " << cellCntr[i].GetSurface() << std::endl;
+                std::cout << "  Center = (" << cellCntr[i].GetCenter().GetXCoord() << ", "
+                  <<  cellCntr[i].GetCenter().GetYCoord() << ")" << std::endl;
+                std::cout << "  Stencil = ";
+                for (int j = 0; j < elemStencil[i].size(); ++ j)
+                {
+                    std::cout << elemStencil[i][j] << " ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
-        }
 
-        // display internal face info
-        for (int i = 0; i < internalFaceCntr.size(); ++i)
-        {
-            std::cout << "Internal face ID: " << internalFaceCntr[i].GetCenter().GetNodeID() << std::endl;
-            std::cout << "  Tag = " << internalFaceCntr[i].GetTag()<< std::endl;
-            std::cout << "  Length = " << internalFaceCntr[i].GetLength()<< std::endl;
-            std::cout << "  Normal = " << internalFaceCntr[i].GetNormal()[0]<<
-              " " << internalFaceCntr[i].GetNormal()[1] << std::endl;
-            std::cout << "  Stencil = ";
-            for (int j = 0; j < innerFaceStencil[i].size(); ++ j)
+            // display internal face info
+            for (int i = 0; i < internalFaceCntr.size(); ++i)
             {
-                std::cout << innerFaceStencil[i][j] << " ";
+                std::cout << "Internal face ID: " << internalFaceCntr[i].GetCenter().GetNodeID() << std::endl;
+                std::cout << "  Tag = " << internalFaceCntr[i].GetTag()<< std::endl;
+                std::cout << "  Length = " << internalFaceCntr[i].GetLength()<< std::endl;
+                std::cout << "  Normal = " << internalFaceCntr[i].GetNormal()[0]<<
+                  " " << internalFaceCntr[i].GetNormal()[1] << std::endl;
+                std::cout << "  Stencil = ";
+                for (int j = 0; j < innerFaceStencil[i].size(); ++ j)
+                {
+                    std::cout << innerFaceStencil[i][j] << " ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
-        }
 
-        // display boundary face info
-        for (int i = 0; i < bcFaceCntr.size(); ++i)
-        {
-            std::cout << "Boundary face ID: " << bcFaceCntr[i].GetCenter().GetNodeID() << std::endl;
-            std::cout << "  Tag = " << bcFaceCntr[i].GetTag()<< std::endl;
-            std::cout << "  Length = " << bcFaceCntr[i].GetLength()<< std::endl;
-            std::cout << "  Normal = " << bcFaceCntr[i].GetNormal()[0]<<
-              " " << bcFaceCntr[i].GetNormal()[1] << std::endl;
-            std::cout << "  Stencil = ";
-            for (int j = 0; j < bcFaceStencil[i].size(); ++ j)
+            // display boundary face info
+            for (int i = 0; i < bcFaceCntr.size(); ++i)
             {
-                std::cout << bcFaceStencil[i][j] << " ";
+                std::cout << "Boundary face ID: " << bcFaceCntr[i].GetCenter().GetNodeID() << std::endl;
+                std::cout << "  Tag = " << bcFaceCntr[i].GetTag()<< std::endl;
+                std::cout << "  Length = " << bcFaceCntr[i].GetLength()<< std::endl;
+                std::cout << "  Normal = " << bcFaceCntr[i].GetNormal()[0]<<
+                  " " << bcFaceCntr[i].GetNormal()[1] << std::endl;
+                std::cout << "  Stencil = ";
+                for (int j = 0; j < bcFaceStencil[i].size(); ++ j)
+                {
+                    std::cout << bcFaceStencil[i][j] << " ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
+
         }
-      std::cout << "+---------------------------------------+" << std::endl;
     }
 
     /// Export grid nodal coordinates in unstructured tecplot format
@@ -734,8 +772,6 @@ public:
       outfile << "QUADRILATERAL";
       outfile << "\n";
 
-      //std::cout.precision(16);
-
       // write nodal coordinates
       for (int i = 0; i < nodes.size(); i++)
       {
@@ -750,7 +786,9 @@ public:
         // get the element node IDs
         const auto nodeIDs = elements[e].GetNodeIDs();
 
-        outfile << nodeIDs[0] + 1 << " " << nodeIDs[1] + 1 << " " << nodeIDs[2] + 1 << " " << nodeIDs[3] + 1;
+        // loop over all nodes of the current element
+        for (int j = 0; j < nodeIDs.size(); ++j)
+        	outfile << nodeIDs[j] + 1 << " ";
         outfile << "\n";
       }
 
@@ -776,22 +814,28 @@ protected:
     /*
     *
     */
-    std::vector<int> OtherNodesAntiClockWise(const Node &node0, const Node &node1,
-      const Node &node2, const Node &node3)
+    std::vector<int> OtherNodesAntiClockWise(const NodeContainer &nodeContainer)
     {
+    	// get the number of nodes
+    	std::size_t nNodes = nodeContainer.size();
+
         // define the baricenter
-        double xc = 0.25 * (node0.GetXCoord() + node1.GetXCoord() + node2.GetXCoord() + node3.GetXCoord());
-        double yc = 0.25 * (node0.GetYCoord() + node1.GetYCoord() + node2.GetYCoord() + node3.GetYCoord());
+        double xc = 0.;
+        double yc = 0.;
+        for (std::size_t i = 0; i < nNodes; ++i)
+        {
+        	xc += nodeContainer[i].GetXCoord() / nNodes;
+        	yc += nodeContainer[i].GetYCoord() / nNodes;
+        }
         Node center(xc, yc, 0);
 
         // compute the angular position
-        std::vector<Node> nodeVect{node0, node1, node2, node3};
         std::vector<double> angularPos;
 
-        for (int i = 0; i < nodeVect.size(); i++)
+        for (int i = 0; i < nNodes; i++)
         {
-           double dx = nodeVect[i].GetXCoord() - center.GetXCoord();
-           double dy = nodeVect[i].GetYCoord() - center.GetYCoord();
+           double dx = nodeContainer[i].GetXCoord() - center.GetXCoord();
+           double dy = nodeContainer[i].GetYCoord() - center.GetYCoord();
            double th = atan2(dy, dx);
            th = fmod((th + M_PI / 2.), (2 * M_PI));
            bool quadrant = std::signbit(th);

@@ -139,10 +139,10 @@ public:
 	    double sR = waveSpeeds[1];
 
 	    // case 1
-	    if (0 <= sL)
+	    if (0 < sL)
 	    	return numericalFluxVectorDotNormalLeft;
 	    // case 2
-	    if (0 >= sR)
+	    if (0 > sR)
 	    	return numericalFluxVectorDotNormalRight;
 	    // case 3
 	    else
@@ -174,8 +174,8 @@ protected:
 		const double nx, const double ny) const
 	{
 		std::vector<double> averagedState = ComputeRoeAveragedFaceState(leftState, rightState, nx, ny);
-		double sL = std::abs(averagedState[4]) - averagedState[3]; // v~ - c~
-		double sR = std::abs(averagedState[4]) + averagedState[3]; // v~ + c~
+		double sL = averagedState[4] - averagedState[3]; // v~ - c~
+		double sR = averagedState[4] + averagedState[3]; // v~ + c~
 
 		std::vector<double> waveSpeeds{sL, sR};
 

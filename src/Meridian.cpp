@@ -2,7 +2,7 @@
 /*
  *
  */
-
+#include <chrono>
 #include "../include/Utils/Utils.hpp"
 #include "../include/SpaceIntegration/Mesh.hpp"
 #include "../include/SpaceIntegration/State.hpp"
@@ -12,6 +12,23 @@
 #include "../include/TimeIntegration/TimeIntegrationScheme.hpp"
 #include "../include/SolverIO/SolverIO.hpp"
 
+/// Parser of the configuration file
+ConfigFileReader CreateConfigFileReader(char *configFilename)
+{
+	std::cout << std::endl;
+	std::cout << "Setting up parameters from configuration file " << configFilename << std::endl;
+	std::cout << std::endl;
+
+	// create an instance of our configuration file reader
+    ConfigFileReader params(configFilename);
+    // call the `Read()` method so that membes called afterwards are initialize
+    params.Read();
+    // print to screem the user params
+    params.PrettyPrint();
+
+    return params;
+
+}
 /// Generate the mesh representation.
 /*
  * Requires the file name of an existing SU2 format mesh file.
@@ -19,28 +36,44 @@
 Mesh CreateMesh(const std::string &meshFilename, const bool displayInfo = false,
 	const bool exportToTecplot = true)
 {
+	// start timing
+	auto t0 = std::chrono::high_resolution_clock::now();
+	std::cout << "Reading and computing mesh..." << std::endl;
+
 	// init the SU2 mesh format reader
-	SU2Reader reader(meshFilename);
+	SU2Reader meshReader(meshFilename);
 
 	// read the mesh file
-	reader.ReadMesh();
+	meshReader.Read();
+
+	// time spent in reading the mesh
+	auto t1 = std::chrono::high_resolution_clock::now();
+	auto dt10 = std::chrono::duration_cast<std::chrono::seconds>(t1 - t0);
+	std::cout << "    Mesh read (" << dt10.count() << " s)" << std::endl;
 
 	// get containers
-	auto &nodes = reader.GetNodeList();
-	auto &elements = reader.GetElementList();
-	auto &boundaries = reader.GetBoundaryList();
+	auto &nodes = meshReader.GetNodeList();
+	auto &elements = meshReader.GetElementList();
+	auto &boundaries = meshReader.GetBoundaryList();
 
 	// generate a mesh object
 	Mesh mesh(nodes, elements, boundaries);
 	mesh.Compute();
 
+	// time spent in computing the mesh
+	auto t2 = std::chrono::high_resolution_clock::now();
+	auto dt21 = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+	std::cout << "    Mesh computed (" << dt21.count() << " s)" << std::endl;
+
 	// display into to screen
-	if (displayInfo)
-	    mesh.DisplayInfo();
+	mesh.DisplayInfo(displayInfo);
 
 	// dump to tecplot format (coordinates only)
 	if (exportToTecplot)
+	{
 	    mesh.ExportToTecplot("grid.dat");
+		std::cout << "Mesh has been exported to tecplot format" << std::endl;
+	}
 
 	return mesh;
 }
@@ -117,24 +150,25 @@ BoundaryConditionContainer CreateBoundaryConditionContainer(Mesh &mesh,
 /*
  *
  */
-TimeStepController CreateTimeStepController(const Mesh &mesh, const meridian::ValueDict params)
+TimeStepController CreateTimeStepController(const Mesh &mesh, const meridian::ValueDict params,
+    const std::string &timeStepType = "local")
 {
 	// check user inputs
-	meridian::CheckValueDict(params, {"CFL", "Activate local time step"},
-		"Wrong value dict passed to the time step controller");
+	meridian::CheckValueDict(params, {"CFL"}, "Wrong value dict passed to the time step controller");
 
 	// get inputs
 	double CFL = params.at("CFL");
-	bool useLocalTimeStep = static_cast<bool>(params.at("Activate local time step"));
 
 	// instantiate our class
 	TimeStepController timeStepController(CFL, mesh.GetCellContainer());
 
 	// compute the time step size per cell
-	if (useLocalTimeStep)
+	if (timeStepType == "local")
 	    timeStepController.ComputeLocalTimeStep();
-	else
+	else if (timeStepType == "global")
 		timeStepController.ComputeGlobalTimeStep();
+	else
+		throw std::invalid_argument("Time step type should be either `local` or `global`");
 
 	return timeStepController;
 }
@@ -150,7 +184,6 @@ BackwardEuler CreateTimeIntegration(const Mesh &mesh, const TimeStepController &
 	return timeIntegration;
 }
 
-
 /// Run the solver using the space and time integration methods.
 /*
  * Requires a residual computation, a time integration, a solution field,
@@ -158,8 +191,8 @@ BackwardEuler CreateTimeIntegration(const Mesh &mesh, const TimeStepController &
  */
 template <class ResidualComputationType, class TimeIntegrationType>
 void RunCFD(ResidualComputationType &residualComputation,
-	TimeIntegrationType &timeIntegration, State &solution, State &residual,
-	Mesh &mesh, const meridian::ValueDict params)
+	TimeIntegrationType &timeIntegration, State &solution, State &residual, Mesh &mesh,
+	const meridian::ValueDict params)
 {
 	// check user inputs
 	meridian::CheckValueDict(params, {"Number of iterations"},
@@ -167,6 +200,14 @@ void RunCFD(ResidualComputationType &residualComputation,
 
 	// get inputs
 	int nIter = params.at("Number of iterations");
+
+	// start timing
+	auto t0 = std::chrono::high_resolution_clock::now();
+	std::cout << std::endl;
+	std::cout << "Running meridian for " << nIter << " iterations" << std::endl;
+
+	// print header to screen
+	timeIntegration.PrintHeader();
 
 	// loop for the given number of iterations
 	for (int iteration = 1; iteration < nIter + 1; ++ iteration)
@@ -181,7 +222,16 @@ void RunCFD(ResidualComputationType &residualComputation,
 
 	// compute the residual using the final solution
     residualComputation.ComputeResidual(solution, residual);
+
+	// time spent in time integration
+	auto t1 = std::chrono::high_resolution_clock::now();
+	auto dt10 = std::chrono::duration_cast<std::chrono::seconds>(t1 - t0);
+	std::cout << std::endl;
+	std::cout << "End of CFD run (" << dt10.count() << " s)" << std::endl;
+
     // export to tecplot format
 	ExportSolutionToTecplot("solution.dat", mesh, solution, residual);
 	timeIntegration.ExportConvergenceMonitor("convergence.dat");
+	std::cout << std::endl;
+	std::cout << "Solution exported to tecplot format" << std::endl;
 }
